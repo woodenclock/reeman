@@ -1,0 +1,7 @@
+bin/
+__pycache__/
+*.py[cod]
+.venv/
+check.md
+.DS_Store
+autoxing-spellbook-gui/.streamlit/secrets.toml

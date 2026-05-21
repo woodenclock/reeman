@@ -1,0 +1,19 @@
+[theme]
+base = "dark"
+primaryColor = "#4CAF50"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA"
+font = "sans serif"
+
+[server]
+port = 3000
+headless = true
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+# App-specific (read by robot_controller/api/client.py — not used by Streamlit core).
+[robot_controller]
+auto_connect_ws = true
