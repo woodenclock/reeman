@@ -1,3 +1,50 @@
+# Commands Cheklist
+
+## Core / Status
+- [ ] get_device_info
+- [ ] get_battery_state
+- [ ] get_robot_position
+- [ ] get_pose
+- [ ] get_wheel_state
+- [ ] jack_state
+- [ ] get_path
+- [ ] get_map_ws
+- [ ] get_alerts
+- [ ] get_current_map
+- [ ] get_maps
+
+## WebSocket Extras
+- [ ] ws_topic
+
+## Map & Overlays
+- [ ] get_map_overlays
+- [ ] get_waypoints
+- [ ] switch_map
+- [ ] set_pose
+- [ ] download_map
+
+## Navigation
+- [ ] navigate
+- [ ] navigate_to_charger
+- [ ] cancel_move
+- [ ] get_move_status
+- [ ] list_moves
+- [ ] check_robot_movement
+
+## Wheel & Services
+- [ ] set_control_mode
+- [ ] set_emergency_stop
+- [ ] clear_wheel_errors
+- [ ] jack_up
+- [ ] jack_down
+- [ ] restart_service
+
+## Infrastructure
+- [ ] change_active_robot
+- [ ] autoxing_help
+- [ ] autoxing_help_detailed
+- [ ] deactivate_autoxing
+
 # Autoxing Spellbook
 
 Tools for operating **Autoxing AXBot** mobile robots on the LAN. The spellbook wraps the robot’s REST API (default port **8090**) and WebSocket telemetry (`/ws/v2/topics`) so you can drive, monitor, and debug robots from the terminal or a browser—without writing one-off API scripts each time.
