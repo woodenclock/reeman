@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -55,141 +56,264 @@ def navigate(
     rack_layer: int | None = None,
     extra: dict[str, Any] | None = None,
 ) -> dict | None:
-    """POST /chassis/moves — full MoveRequest per openapi.yaml."""
-    payload: dict[str, Any] = {
-        "creator": creator or DEFAULT_CREATOR,
-        "type": move_type,
-    }
-    if target_x is not None:
-        payload["target_x"] = float(target_x)
-    if target_y is not None:
-        payload["target_y"] = float(target_y)
-    if target_ori is not None:
-        payload["target_ori"] = float(target_ori)
-    if target_z is not None:
-        payload["target_z"] = float(target_z)
-    if target_accuracy is not None:
-        payload["target_accuracy"] = float(target_accuracy)
-    if route_coordinates is not None:
-        payload["route_coordinates"] = route_coordinates
-    if detour_tolerance is not None:
-        payload["detour_tolerance"] = float(detour_tolerance)
-    if use_target_zone is not None:
-        payload["use_target_zone"] = bool(use_target_zone)
-    if charge_retry_count is not None:
-        payload["charge_retry_count"] = int(charge_retry_count)
-    if rack_area_id is not None:
-        payload["rack_area_id"] = rack_area_id
-    props: dict[str, Any] = {}
-    if inplace_rotate is not None:
-        props["inplace_rotate"] = bool(inplace_rotate)
-    if rack_layer is not None:
-        props["rack_layer"] = int(rack_layer)
-    if props:
-        payload["properties"] = props
-    if extra:
-        for k, v in extra.items():
-            if k in payload and isinstance(payload[k], dict) and isinstance(v, dict):
-                payload[k] = {**payload[k], **v}
-            else:
-                payload[k] = v
+    
+    # """POST /chassis/moves — full MoveRequest per openapi.yaml. NOT USED for Reeman"""
 
-    data = request_api("POST", "/chassis/moves", json_body=payload)
+    # """"
+    # payload: dict[str, Any] = {
+    #     "creator": creator or DEFAULT_CREATOR,
+    #     "type": move_type,
+    # }
+    # if target_x is not None:
+    #     payload["target_x"] = float(target_x)
+    # if target_y is not None:
+    #     payload["target_y"] = float(target_y)
+    # if target_ori is not None:
+    #     payload["target_ori"] = float(target_ori)
+    # if target_z is not None:
+    #     payload["target_z"] = float(target_z)
+    # if target_accuracy is not None:
+    #     payload["target_accuracy"] = float(target_accuracy)
+    # if route_coordinates is not None:
+    #     payload["route_coordinates"] = route_coordinates
+    # if detour_tolerance is not None:
+    #     payload["detour_tolerance"] = float(detour_tolerance)
+    # if use_target_zone is not None:
+    #     payload["use_target_zone"] = bool(use_target_zone)
+    # if charge_retry_count is not None:
+    #     payload["charge_retry_count"] = int(charge_retry_count)
+    # if rack_area_id is not None:
+    #     payload["rack_area_id"] = rack_area_id
+    # props: dict[str, Any] = {}
+    # if inplace_rotate is not None:
+    #     props["inplace_rotate"] = bool(inplace_rotate)
+    # if rack_layer is not None:
+    #     props["rack_layer"] = int(rack_layer)
+    # if props:
+    #     payload["properties"] = props
+    # if extra:
+    #     for k, v in extra.items():
+    #         if k in payload and isinstance(payload[k], dict) and isinstance(v, dict):
+    #             payload[k] = {**payload[k], **v}
+    #         else:
+    #             payload[k] = v
+
+    # data = request_api("POST", "/chassis/moves", json_body=payload)
+    # return data if isinstance(data, dict) else None
+    # """
+
+    # """
+    # Same AutoXing CLI-facing function, but talks to Reeman manufacturer API.
+
+    # standard + target_name -> POST /cmd/nav_name {"point": name}
+    # standard + x y theta   -> POST /cmd/nav {"x": x, "y": y, "theta": theta}
+    # charge                 -> POST /cmd/charge {"type": 2, "point": charge_point}
+    # """
+    
+    if move_type == "charge":
+        charge_point = "Charging pile"
+
+        if extra and "point" in extra:
+            charge_point = str(extra["point"])
+
+        data = request_api(
+            "POST",
+            "/cmd/charge",
+            json_body={
+                "type": 2,
+                "point": charge_point,
+            },
+        )
+        return data if isinstance(data, dict) else {"status": "success"}
+
+    if move_type != "standard":
+        print(
+            f"Unsupported move_type for Reeman manufacturer API: {move_type!r}",
+            file=sys.stderr,
+        )
+        return None
+
+    if target_x is None or target_y is None or target_ori is None:
+        print(
+            "Missing target. Provide X Y THETA, e.g. python3 navigate.py 1.0 2.0 0.0",
+            file=sys.stderr,
+        )
+        return None
+
+    payload = {
+        "x": float(target_x),
+        "y": float(target_y),
+        "theta": float(target_ori),
+    }
+
+    data = request_api(
+        "POST",
+        "/cmd/nav",
+        json_body=payload,
+    )
+
+    return data if isinstance(data, dict) else {"status": "success"}
+
+# """
+# _TERMINAL_MOVE_STATES = frozenset({"succeeded", "failed", "cancelled"})
+# _PLANNING_TOPIC = "/planning_state"
+
+
+# def planning_move_state(msg: Any) -> str | None:
+#     if not isinstance(msg, dict) or msg.get("topic") != _PLANNING_TOPIC:
+#         return None
+#     state = msg.get("move_state")
+#     return state if isinstance(state, str) else None
+
+
+# def should_cancel_on_interrupt(last_move_state: str | None) -> bool:
+#     # Cancel when interrupted unless the planner already reported ``succeeded``.
+#     return last_move_state != "succeeded"
+
+
+# @dataclass
+# class _MoveWatchState:
+#     last_move_state: str | None = None
+#     terminal_state: str | None = None
+
+
+# def _print_planning_status(state: str) -> None:
+#     if state == "succeeded":
+#         hint = "done"
+#     elif state == "moving":
+#         hint = "moving — Ctrl+C to cancel"
+#     elif state in ("failed", "cancelled"):
+#         hint = state
+#     else:
+#         hint = f"{state} — Ctrl+C to cancel"
+#     sys.stderr.write(f"\rmoving.... ({hint})   ")
+#     sys.stderr.flush()
+
+
+# def _handle_planning_message(state: _MoveWatchState, data: object) -> None:
+#     move_state = planning_move_state(data)
+#     if move_state is None:
+#         return
+#     state.last_move_state = move_state
+#     _print_planning_status(move_state)
+#     if move_state in _TERMINAL_MOVE_STATES:
+#         state.terminal_state = move_state
+
+
+# async def _monitor_move_planning_async(state: _MoveWatchState) -> None:
+#     # Stream ``/planning_state`` until terminal state or KeyboardInterrupt.
+#     want = {_PLANNING_TOPIC}
+#     ot = timeout_seconds()
+#     uri = ws_uri_from_robot_ip(ROBOT.ROBOT_IP)
+
+#     async with websockets.connect(uri, open_timeout=ot) as ws:
+#         await ws.send(json.dumps({"enable_topic": _PLANNING_TOPIC}))
+#         print("moving....", file=sys.stderr, flush=True)
+#         while state.terminal_state is None:
+#             try:
+#                 raw = await asyncio.wait_for(ws.recv(), timeout=0.5)
+#             except asyncio.TimeoutError:
+#                 continue
+#             try:
+#                 data = json.loads(raw)
+#             except (json.JSONDecodeError, TypeError):
+#                 continue
+#             topic = data.get("topic")
+#             if isinstance(topic, str) and topic in want:
+#                 _handle_planning_message(state, data)
+
+
+# def monitor_move_after_dispatch() -> None:
+#     # Watch ``/planning_state``; cancel on Ctrl+C unless move already ``succeeded``.
+#     from cancel_move import cancel_move_robust
+
+#     watch = _MoveWatchState()
+#     interrupted = False
+#     try:
+#         asyncio.run(_monitor_move_planning_async(watch))
+#     except KeyboardInterrupt:
+#         interrupted = True
+#     finally:
+#         sys.stderr.write("\n")
+#         sys.stderr.flush()
+#         if watch.terminal_state == "succeeded":
+#             print("Move finished: succeeded", file=sys.stderr)
+#         elif watch.terminal_state:
+#             print(f"Move finished: {watch.terminal_state}", file=sys.stderr)
+#         elif interrupted and should_cancel_on_interrupt(watch.last_move_state):
+#             print(
+#                 "Interrupt — sending cancel (PATCH /chassis/moves/current)…",
+#                 file=sys.stderr,
+#                 flush=True,
+#             )
+#             cancel_move_robust()
+# """
+
+
+def get_nav_status() -> dict | None:
+    data = request_api("GET", "/reeman/nav_status")
     return data if isinstance(data, dict) else None
 
 
-_TERMINAL_MOVE_STATES = frozenset({"succeeded", "failed", "cancelled"})
-_PLANNING_TOPIC = "/planning_state"
+def cancel_move_robust() -> dict | None:
+    data = request_api("POST", "/cmd/cancel_goal", json_body={})
+    return data if isinstance(data, dict) else {"status": "success"}
 
 
-def planning_move_state(msg: Any) -> str | None:
-    if not isinstance(msg, dict) or msg.get("topic") != _PLANNING_TOPIC:
-        return None
-    state = msg.get("move_state")
-    return state if isinstance(state, str) else None
+def _state_text(s: dict) -> str:
+    res = s.get("res")
+    reason = s.get("reason")
+    goal = s.get("goal", "")
+    dist = s.get("dist", "")
+    mileage = s.get("mileage", "")
 
-
-def should_cancel_on_interrupt(last_move_state: str | None) -> bool:
-    """Cancel when interrupted unless the planner already reported ``succeeded``."""
-    return last_move_state != "succeeded"
-
-
-@dataclass
-class _MoveWatchState:
-    last_move_state: str | None = None
-    terminal_state: str | None = None
-
-
-def _print_planning_status(state: str) -> None:
-    if state == "succeeded":
-        hint = "done"
-    elif state == "moving":
-        hint = "moving — Ctrl+C to cancel"
-    elif state in ("failed", "cancelled"):
-        hint = state
+    if res == 1:
+        state = "moving"
+    elif res == 3 and reason == 0:
+        state = "succeeded"
+    elif res == 3:
+        state = "failed"
+    elif res == 4:
+        state = "cancelled"
+    elif res == 6:
+        state = "idle"
     else:
-        hint = f"{state} — Ctrl+C to cancel"
-    sys.stderr.write(f"\rmoving.... ({hint})   ")
-    sys.stderr.flush()
+        state = f"res={res}"
 
-
-def _handle_planning_message(state: _MoveWatchState, data: object) -> None:
-    move_state = planning_move_state(data)
-    if move_state is None:
-        return
-    state.last_move_state = move_state
-    _print_planning_status(move_state)
-    if move_state in _TERMINAL_MOVE_STATES:
-        state.terminal_state = move_state
-
-
-async def _monitor_move_planning_async(state: _MoveWatchState) -> None:
-    """Stream ``/planning_state`` until terminal state or KeyboardInterrupt."""
-    want = {_PLANNING_TOPIC}
-    ot = timeout_seconds()
-    uri = ws_uri_from_robot_ip(ROBOT.ROBOT_IP)
-
-    async with websockets.connect(uri, open_timeout=ot) as ws:
-        await ws.send(json.dumps({"enable_topic": _PLANNING_TOPIC}))
-        print("moving....", file=sys.stderr, flush=True)
-        while state.terminal_state is None:
-            try:
-                raw = await asyncio.wait_for(ws.recv(), timeout=0.5)
-            except asyncio.TimeoutError:
-                continue
-            try:
-                data = json.loads(raw)
-            except (json.JSONDecodeError, TypeError):
-                continue
-            topic = data.get("topic")
-            if isinstance(topic, str) and topic in want:
-                _handle_planning_message(state, data)
+    return f"{state} goal={goal} dist={dist} mileage={mileage} reason={reason}"
 
 
 def monitor_move_after_dispatch() -> None:
-    """Watch ``/planning_state``; cancel on Ctrl+C unless move already ``succeeded``."""
-    from cancel_move import cancel_move_robust
-
-    watch = _MoveWatchState()
-    interrupted = False
     try:
-        asyncio.run(_monitor_move_planning_async(watch))
+        print("moving....", file=sys.stderr, flush=True)
+
+        while True:
+            status = get_nav_status()
+            if not status:
+                time.sleep(0.5)
+                continue
+
+            sys.stderr.write(f"\r{_state_text(status)}   ")
+            sys.stderr.flush()
+
+            if status.get("res") == 3:
+                sys.stderr.write("\n")
+                if status.get("reason") == 0:
+                    print("Move finished: succeeded", file=sys.stderr)
+                else:
+                    print(f"Move finished: failed reason={status.get('reason')}", file=sys.stderr)
+                return
+
+            if status.get("res") == 4:
+                sys.stderr.write("\n")
+                print("Move finished: cancelled", file=sys.stderr)
+                return
+
+            time.sleep(0.5)
+
     except KeyboardInterrupt:
-        interrupted = True
-    finally:
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-        if watch.terminal_state == "succeeded":
-            print("Move finished: succeeded", file=sys.stderr)
-        elif watch.terminal_state:
-            print(f"Move finished: {watch.terminal_state}", file=sys.stderr)
-        elif interrupted and should_cancel_on_interrupt(watch.last_move_state):
-            print(
-                "Interrupt — sending cancel (PATCH /chassis/moves/current)…",
-                file=sys.stderr,
-                flush=True,
-            )
-            cancel_move_robust()
+        sys.stderr.write("\nInterrupt - sending cancel /cmd/cancel_goal...\n")
+        cancel_move_robust()
 
 
 def _merge_extra_json(s: str | None) -> dict[str, Any] | None:
@@ -263,7 +387,24 @@ if __name__ == "__main__":
         if not isinstance(payload, dict):
             print("body-file must contain a JSON object", file=sys.stderr)
             sys.exit(1)
-        data = request_api("POST", "/chassis/moves", json_body=payload)
+        # data = request_api("POST", "/chassis/moves", json_body=payload)     # request_api
+        
+        if "point" in payload:
+            data = request_api("POST", "/cmd/nav_name", json_body={"point": payload["point"]})
+        elif {"x", "y", "theta"} <= payload.keys():
+            data = request_api(
+                "POST",
+                "/cmd/nav",
+                json_body={
+                    "x": float(payload["x"]),
+                    "y": float(payload["y"]),
+                    "theta": float(payload["theta"]),
+                },
+            )
+        else:
+            print('body-file must contain either {"point": "..."} or {"x": ..., "y": ..., "theta": ...}', file=sys.stderr)
+            sys.exit(1)
+
         out = data if isinstance(data, dict) else None
         if out is not None:
             print_json(out)
@@ -282,18 +423,29 @@ if __name__ == "__main__":
             except ValueError:
                 print("Three rest args must be numeric X Y ORI.", file=sys.stderr)
                 sys.exit(1)
+        
+        
+        # elif len(args.rest) == 1 and args.type == "standard":
+        #     target_name = args.rest[0]
+        #     wps = get_waypoints() or []
+        #     hit = False
+        #     for w in wps:
+        #         if w.get("name") == target_name:
+        #             ax, ay, ao = w["x"], w["y"], w["ori"]
+        #             hit = True
+        #             break
+        #     if not hit:
+        #         print(f"Waypoint {target_name!r} not found in overlays.", file=sys.stderr)
+        #         sys.exit(1) 
+
         elif len(args.rest) == 1 and args.type == "standard":
-            target_name = args.rest[0]
-            wps = get_waypoints() or []
-            hit = False
-            for w in wps:
-                if w.get("name") == target_name:
-                    ax, ay, ao = w["x"], w["y"], w["ori"]
-                    hit = True
-                    break
-            if not hit:
-                print(f"Waypoint {target_name!r} not found in overlays.", file=sys.stderr)
-                sys.exit(1)
+            data = request_api("POST", "/cmd/nav_name", json_body={"point": args.rest[0]})
+            out = data if isinstance(data, dict) else {"status": "success"}
+            print_json(out)
+            if not args.no_monitor:
+                monitor_move_after_dispatch()
+            sys.exit(0)
+                
         else:
             print("Provide three numbers X Y ORI, one waypoint name, or use --target-x/--target-y.", file=sys.stderr)
             sys.exit(1)

@@ -5,3 +5,19 @@ __pycache__/
 check.md
 .DS_Store
 autoxing-spellbook-gui/.streamlit/secrets.toml
+
+# local docs / notes
+Context.txt
+*.pdf
+
+# credentials / local config
+credentials/
+CONSTANTS.yml
+*.yml
+
+# generated package metadata
+*.egg-info/
+
+# python cache
+__pycache__/
+*.pyc
