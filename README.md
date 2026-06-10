@@ -1,30 +1,30 @@
 # Commands Cheklist
 
 ## Core / Status
-- [ ] get_device_info
-- [ ] get_battery_state
-- [ ] get_robot_position
-- [ ] get_pose
-- [ ] get_wheel_state
+- [X] get_device_info
+- [X] get_battery_state
+- [X] get_robot_position
+- [X] get_pose
+- [X] get_wheel_state
 - [ ] jack_state
-- [ ] get_path
-- [ ] get_map_ws
+- [X] get_path
+- [X] get_map_ws
 - [ ] get_alerts
-- [ ] get_current_map
-- [ ] get_maps
+- [X] get_current_map
+- [X] get_maps
 
 ## WebSocket Extras
 - [ ] ws_topic
 
 ## Map & Overlays
 - [ ] get_map_overlays
-- [ ] get_waypoints
-- [ ] switch_map
+- [X] get_waypoints
+- [X] switch_map
 - [ ] set_pose
 - [ ] download_map
 
 ## Navigation
-- [ ] navigate
+- [X] navigate
 - [ ] navigate_to_charger
 - [ ] cancel_move
 - [ ] get_move_status
