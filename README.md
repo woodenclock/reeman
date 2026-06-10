@@ -1,6 +1,6 @@
-# Commands Cheklist
+## Commands Cheklist
 
-## Core / Status
+### Core / Status
 - [X] get_device_info
 - [X] get_battery_state
 - [X] get_robot_position
@@ -13,17 +13,17 @@
 - [X] get_current_map
 - [X] get_maps
 
-## WebSocket Extras
+### WebSocket Extras
 - [ ] ws_topic
 
-## Map & Overlays
+### Map & Overlays
 - [ ] get_map_overlays
 - [X] get_waypoints
 - [X] switch_map
 - [ ] set_pose
 - [ ] download_map
 
-## Navigation
+### Navigation
 - [X] navigate
 - [ ] navigate_to_charger
 - [ ] cancel_move
@@ -31,7 +31,7 @@
 - [ ] list_moves
 - [ ] check_robot_movement
 
-## Wheel & Services
+### Wheel & Services
 - [ ] set_control_mode
 - [ ] set_emergency_stop
 - [ ] clear_wheel_errors
@@ -39,7 +39,7 @@
 - [ ] jack_down
 - [ ] restart_service
 
-## Infrastructure
+### Infrastructure
 - [ ] change_active_robot
 - [ ] autoxing_help
 - [ ] autoxing_help_detailed
