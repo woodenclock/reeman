@@ -1,23 +1,22 @@
-bin/
+# Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
-check.md
-.DS_Store
-autoxing-spellbook-gui/.streamlit/secrets.toml
 
-# local docs / notes
-Context.txt
-*.pdf
+# Generated CLI links
+bin/
 
-# credentials / local config
+# Local config / credentials
 credentials/
 CONSTANTS.yml
 *.yml
+autoxing-spellbook-gui/.streamlit/secrets.toml
 
-# generated package metadata
-*.egg-info/
+# Local docs / notes
+check.md
+Context.txt
+*.pdf
 
-# python cache
-__pycache__/
-*.pyc
+# OS files
+.DS_Store
