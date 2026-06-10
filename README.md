@@ -27,7 +27,7 @@
 - [X] navigate
 - [ ] navigate_to_charger
 - [ ] cancel_move
-- [ ] get_move_status
+- [X] get_move_status
 - [ ] list_moves
 - [ ] check_robot_movement
 
@@ -35,8 +35,8 @@
 - [ ] set_control_mode
 - [ ] set_emergency_stop
 - [ ] clear_wheel_errors
-- [ ] jack_up
-- [ ] jack_down
+- [X] jack_up
+- [X] jack_down
 - [ ] restart_service
 
 ### Infrastructure
