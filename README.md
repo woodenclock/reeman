@@ -29,7 +29,7 @@
 - [X] cancel_move
 - [X] get_move_status
 - [ ] list_moves
-- [ ] check_robot_movement
+- [X] check_robot_movement
 
 ### Wheel & Services
 - [ ] set_control_mode
