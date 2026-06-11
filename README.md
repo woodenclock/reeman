@@ -26,7 +26,7 @@
 ### Navigation
 - [X] navigate
 - [ ] navigate_to_charger
-- [ ] cancel_move
+- [X] cancel_move
 - [X] get_move_status
 - [ ] list_moves
 - [ ] check_robot_movement
