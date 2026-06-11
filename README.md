@@ -25,7 +25,7 @@
 
 ### Navigation
 - [X] navigate
-- [ ] navigate_to_charger
+- [X] navigate_to_charger
 - [X] cancel_move
 - [X] get_move_status
 - [ ] list_moves
