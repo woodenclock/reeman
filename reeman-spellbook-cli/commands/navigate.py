@@ -95,17 +95,8 @@ def get_reeman_nav_status(timeout: float | None = None) -> dict | None:
 
 
 def monitor_reeman_move_after_dispatch(timeout: float | None = None) -> None:
-    """
-    Poll Reeman /reeman/nav_status until terminal state.
-
-    Reeman nav_status:
-      res=1 means navigation started / moving
-      res=3 means navigation result
-      reason=0 under res=3 means success
-      res=4 means cancelled
-      res=6 means normal/idle before navigation
-    """
     poll_timeout = timeout or 10
+    seen_moving = False
 
     print("moving....", file=sys.stderr, flush=True)
 
@@ -123,10 +114,17 @@ def monitor_reeman_move_after_dispatch(timeout: float | None = None) -> None:
             dist = status.get("dist")
 
             if res == 1:
+                seen_moving = True
                 sys.stderr.write(f"\rmoving.... (moving to {goal}, dist={dist})   ")
                 sys.stderr.flush()
 
-            elif res == 3:
+                if dist is not None and float(dist) <= 0.15:
+                    sys.stderr.write("\n")
+                    sys.stderr.flush()
+                    print("Move finished: close enough", file=sys.stderr)
+                    return
+
+            elif res == 3 and seen_moving:
                 sys.stderr.write("\n")
                 sys.stderr.flush()
 
