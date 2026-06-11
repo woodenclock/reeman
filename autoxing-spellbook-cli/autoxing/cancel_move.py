@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import requests
 import signal
 import sys
-from contextlib import contextmanager
+
 from api_client import request_api
+from contextlib import contextmanager
+from credentials import CONSTANTS as ROBOT
 
 CANCEL_TIMEOUT_SEC = 4.0
 CANCEL_RETRIES = 3
+
+
+def _robot_base_url() -> str:
+    prefix = getattr(ROBOT, "PREFIX", "http://")
+    ip = getattr(ROBOT, "ROBOT_IP")
+    return f"{prefix}{ip}".rstrip("/")
 
 
 @contextmanager
@@ -25,8 +34,32 @@ def _ignore_sigint():
             signal.signal(signal.SIGINT, old)
 
 
-def cancel_move(*, timeout: float | None = None, print_errors: bool = True) -> dict | None:
-    """PATCH /chassis/moves/current — cancel active navigation."""
+def cancel_reeman_move(timeout: float | None = None) -> dict | None:
+    """Cancel Reeman active navigation via REST API."""
+    try:
+        resp = requests.post(
+            f"{_robot_base_url()}/cmd/cancel_goal",
+            json={},
+            timeout=timeout or CANCEL_TIMEOUT_SEC,
+        )
+        resp.raise_for_status()
+
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {}
+
+        return data if isinstance(data, dict) else {"result": data}
+
+    except Exception as e:
+        print(f"Reeman REST error: {e}", file=sys.stderr)
+        return None
+
+
+def cancel_openapi_move(
+    *, timeout: float | None = None, print_errors: bool = True
+) -> dict | None:
+    """PATCH /chassis/moves/current — fallback cancel active navigation."""
     data = request_api(
         "PATCH",
         "/chassis/moves/current",
@@ -37,6 +70,20 @@ def cancel_move(*, timeout: float | None = None, print_errors: bool = True) -> d
     if isinstance(data, dict):
         return data
     return data if data is None else {"result": data}
+
+
+def cancel_move(*, timeout: float | None = None, print_errors: bool = True) -> dict | None:
+    """
+    Cancel active navigation.
+
+    Reeman FlyBoat uses REST API.
+    Existing OpenAPI/WebSocket path is kept as fallback.
+    """
+    result = cancel_reeman_move(timeout=timeout)
+    if result is not None:
+        return result
+
+    return cancel_openapi_move(timeout=timeout, print_errors=print_errors)
 
 
 def cancel_move_robust(*, retries: int = CANCEL_RETRIES) -> bool:
