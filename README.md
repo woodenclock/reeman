@@ -41,9 +41,9 @@
 
 ### Infrastructure
 - [ ] change_active_robot
-- [ ] reeman_help
-- [ ] reeman_help_detailed
-- [ ] deactivate_reeman
+- [X] reeman_help
+- [X] reeman_help_detailed
+- [X] deactivate_reeman
 
 # Autoxing Spellbook
 
