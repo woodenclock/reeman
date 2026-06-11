@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 
-from pathlib import Path
-
 import requests
 
 from api_client import base_url, request_api
+from credentials import CONSTANTS as ROBOT
+from pathlib import Path
 
 REQUEST_TIMEOUT = 120
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _robot_base_url() -> str:
+    prefix = getattr(ROBOT, "PREFIX", "http://")
+    ip = getattr(ROBOT, "ROBOT_IP")
+    return f"{prefix}{ip}".rstrip("/")
 
 
 def normalize_dest_path(dest_path: str) -> Path:
@@ -20,10 +26,77 @@ def normalize_dest_path(dest_path: str) -> Path:
     return path
 
 
-def download_map(dest_path: str, map_id: int | None = None, *, prefer: str = "image_url") -> str | None:
-    """Fetch map raster from ``GET /maps/{id}`` (``image_url`` or ``thumbnail_url``).
+def get_reeman_current_map(timeout: float | None = None) -> dict | None:
+    """Get Reeman current map info via REST API."""
+    try:
+        resp = requests.get(
+            f"{_robot_base_url()}/reeman/current_map",
+            timeout=timeout or 10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-    Returns path written, or ``None``.
+        if not isinstance(data, dict):
+            return None
+
+        return data
+    except Exception as e:
+        print(f"Reeman current map REST error: {e}")
+        return None
+
+
+def download_reeman_map(
+    dest_path: str,
+    map_name: str | None = None,
+    *,
+    timeout: float | None = None,
+) -> str | None:
+    """Download Reeman map export via REST API.
+
+    Reeman endpoint:
+        POST /download/export_map
+        body: {"name": "<map name>"}
+
+    Returns path written, or None.
+    """
+    try:
+        if not map_name:
+            current = get_reeman_current_map(timeout=timeout)
+            if not current:
+                return None
+
+            map_name = current.get("name") or current.get("alias")
+
+        if not map_name:
+            print("No valid Reeman map name.")
+            return None
+
+        resp = requests.post(
+            f"{_robot_base_url()}/download/export_map",
+            json={"name": map_name},
+            timeout=timeout or REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+
+        path = normalize_dest_path(dest_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(resp.content)
+        return str(path)
+
+    except Exception as e:
+        print(f"Reeman map download REST error: {e}")
+        return None
+
+
+def download_openapi_map(
+    dest_path: str,
+    map_id: int | None = None,
+    *,
+    prefer: str = "image_url",
+) -> str | None:
+    """Fetch map raster from GET /maps/{id} image_url or thumbnail_url.
+
+    Returns path written, or None.
     """
     if map_id is None:
         from get_current_map import current_map_id
@@ -31,6 +104,7 @@ def download_map(dest_path: str, map_id: int | None = None, *, prefer: str = "im
         mid = current_map_id()
     else:
         mid = int(map_id)
+
     if mid is None or mid < 0:
         print("No valid map id.")
         return None
@@ -44,6 +118,7 @@ def download_map(dest_path: str, map_id: int | None = None, *, prefer: str = "im
         img = meta.get("thumbnail_url") or meta.get("image_url")
     else:
         img = meta.get("image_url") or meta.get("thumbnail_url")
+
     if not img:
         print("No image_url/thumbnail_url in map detail.")
         return None
@@ -59,16 +134,36 @@ def download_map(dest_path: str, map_id: int | None = None, *, prefer: str = "im
     try:
         ir = requests.get(img_url, timeout=REQUEST_TIMEOUT)
         ir.raise_for_status()
+
         path = normalize_dest_path(dest_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(ir.content)
         return str(path)
+
     except requests.exceptions.RequestException as e:
-        print(f"Download failed: {e}")
+        print(f"OpenAPI map download failed: {e}")
         return None
 
 
-def _default_filename(map_id: int, map_name: str | None = None) -> str:
+def download_map(
+    dest_path: str,
+    map_id: int | None = None,
+    *,
+    prefer: str = "image_url",
+) -> str | None:
+    """Download map.
+
+    Reeman FlyBoat uses REST API.
+    Existing OpenAPI path is kept as fallback.
+    """
+    saved = download_reeman_map(dest_path, map_name=str(map_id) if map_id is not None else None)
+    if saved is not None:
+        return saved
+
+    return download_openapi_map(dest_path, map_id=map_id, prefer=prefer)
+
+
+def _default_filename(map_id: int | str, map_name: str | None = None) -> str:
     if map_name and map_name.strip():
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in map_name.strip())
         safe = safe.strip("._") or f"map_{map_id}"
@@ -90,6 +185,20 @@ if __name__ == "__main__":
         out = f"map_{mid}.png"
 
     if mid is None:
+        current = get_reeman_current_map()
+        if current:
+            chosen_name = current.get("alias") or current.get("name")
+            map_name = current.get("name") or chosen_name
+
+            if not out:
+                default = _default_filename(map_name or "current", chosen_name)
+                out = input(f"Output filename in current dir [{default}]: ").strip() or default
+
+            saved = download_reeman_map(out, map_name=map_name)
+            if saved:
+                print("Saved:", saved)
+                sys.exit(0)
+
         from cli_tables import print_maps_table
         from get_maps import get_maps
 
@@ -97,8 +206,10 @@ if __name__ == "__main__":
         if not maps:
             print("No maps.")
             sys.exit(1)
+
         print_maps_table(maps)
         u = input("Map index (or enter map id): ").strip()
+
         if u.isdigit() and int(u) < len(maps):
             chosen = maps[int(u)]
             mid = int(chosen["id"])
@@ -111,9 +222,7 @@ if __name__ == "__main__":
 
     if not out:
         default = _default_filename(mid, chosen_name)
-        out = (
-            input(f"Output filename in current dir [{default}]: ").strip() or default
-        )
+        out = input(f"Output filename in current dir [{default}]: ").strip() or default
 
     saved = download_map(out, mid)
     if saved:
