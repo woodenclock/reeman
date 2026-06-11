@@ -20,7 +20,7 @@
 - [ ] get_map_overlays
 - [X] get_waypoints
 - [X] switch_map
-- [ ] set_pose
+- [X] set_pose
 - [ ] download_map
 
 ### Navigation
