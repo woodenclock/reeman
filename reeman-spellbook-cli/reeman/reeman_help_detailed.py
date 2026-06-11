@@ -125,15 +125,17 @@ INFRASTRUCTURE
   deactivate_reeman    Remove Reeman Spellbook commands from PATH.
 
 SETUP
-  cd spellbook-cli
+  cd reeman-spellbook-cli
+
   uv sync
   ./setup_bin.sh
   source activate_reeman.sh
+  
   reeman_help
   get_device_info
 
 CONFIGURATION
-  credentials/CONSTANTS.yml stores robot host configuration.
+  reeman-spellbook-sli/reeman/credentials/CONSTANTS.yml stores robot host configuration.
   Keep robot IP there and let scripts read from it.
 
 TROUBLESHOOTING
