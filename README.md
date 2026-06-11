@@ -17,11 +17,11 @@
 - [ ] ws_topic
 
 ### Map & Overlays
-- [ ] get_map_overlays
+- [X] get_map_overlays
 - [X] get_waypoints
 - [X] switch_map
 - [X] set_pose
-- [ ] download_map
+- [X] download_map
 
 ### Navigation
 - [X] navigate
