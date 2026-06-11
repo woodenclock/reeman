@@ -34,16 +34,16 @@
 ### Wheel & Services
 - [ ] set_control_mode
 - [ ] set_emergency_stop
-- [ ] clear_wheel_errors
+- [X] clear_wheel_errors
 - [X] jack_up
 - [X] jack_down
 - [ ] restart_service
 
 ### Infrastructure
 - [ ] change_active_robot
-- [ ] autoxing_help
-- [ ] autoxing_help_detailed
-- [ ] deactivate_autoxing
+- [ ] reeman_help
+- [ ] reeman_help_detailed
+- [ ] deactivate_reeman
 
 # Autoxing Spellbook
 
