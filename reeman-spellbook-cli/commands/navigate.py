@@ -7,7 +7,6 @@ import asyncio
 import json
 import sys
 import time
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,31 +33,50 @@ MOVE_TYPES = (
 )
 
 
+def base_url_for_docs() -> str:
+    from credentials import CONSTANTS as ROBOT
+
+    return f"{ROBOT.PREFIX}{ROBOT.ROBOT_IP}".rstrip("/")
+
+
 def _robot_base_url() -> str:
     prefix = getattr(ROBOT, "PREFIX", "http://")
     ip = getattr(ROBOT, "ROBOT_IP")
     return f"{prefix}{ip}".rstrip("/")
 
 
-def base_url_for_docs() -> str:
-    # from credentials import CONSTANTS as ROBOT
-    # return f"{ROBOT.PREFIX}{ROBOT.ROBOT_IP}".rstrip("/")
-    return _robot_base_url()
-
-
-def _reeman_rest_available(timeout: float | None = None) -> bool:
+def navigate_reeman(
+    target_x: float,
+    target_y: float,
+    target_ori: float,
+    timeout: float | None = None,
+) -> dict | None:
+    """Navigate Reeman FlyBoat via REST API: POST /cmd/nav."""
     try:
-        resp = requests.get(
-            f"{_robot_base_url()}/reeman/hostname",
-            timeout=timeout or 3,
+        payload = {
+            "x": float(target_x),
+            "y": float(target_y),
+            "theta": float(target_ori),
+        }
+        resp = requests.post(
+            f"{_robot_base_url()}/cmd/nav",
+            json=payload,
+            timeout=timeout or 10,
         )
-        return resp.ok
-    except Exception:
-        return False
+        resp.raise_for_status()
+        data = resp.json()
+
+        if isinstance(data, dict):
+            return data
+        return {"raw": data}
+
+    except Exception as e:
+        print(f"Reeman REST error: {e}", file=sys.stderr)
+        return None
 
 
 def get_reeman_nav_status(timeout: float | None = None) -> dict | None:
-    """GET /reeman/nav_status."""
+    """Get Reeman navigation status via REST API: GET /reeman/nav_status."""
     try:
         resp = requests.get(
             f"{_robot_base_url()}/reeman/nav_status",
@@ -66,128 +84,70 @@ def get_reeman_nav_status(timeout: float | None = None) -> dict | None:
         )
         resp.raise_for_status()
         data = resp.json()
-        return data if isinstance(data, dict) else None
+
+        if isinstance(data, dict):
+            return data
+        return {"raw": data}
+
     except Exception as e:
-        print(f"Reeman REST error: {e}", file=sys.stderr)
+        print(f"Reeman nav status error: {e}", file=sys.stderr)
         return None
 
 
-def _reeman_status_to_move_state(status: dict) -> str | None:
+def monitor_reeman_move_after_dispatch(timeout: float | None = None) -> None:
     """
+    Poll Reeman /reeman/nav_status until terminal state.
+
     Reeman nav_status:
-      res=1 -> navigation started / moving
-      res=3, reason=0 -> success
-      res=3, reason=1 -> failed
-      res=4 -> cancelled
-      res=6 -> normal / idle
+      res=1 means navigation started / moving
+      res=3 means navigation result
+      reason=0 under res=3 means success
+      res=4 means cancelled
+      res=6 means normal/idle before navigation
     """
-    res = status.get("res")
-    reason = status.get("reason")
+    poll_timeout = timeout or 10
 
-    if res == 1:
-        return "moving"
-    if res == 3 and reason == 0:
-        return "succeeded"
-    if res == 3 and reason == 1:
-        return "failed"
-    if res == 4:
-        return "cancelled"
-    if res == 6:
-        return "idle"
-    return None
-
-
-def cancel_reeman_move(timeout: float | None = None) -> dict | None:
-    """POST /cmd/cancel_goal."""
-    try:
-        resp = requests.post(
-            f"{_robot_base_url()}/cmd/cancel_goal",
-            json={},
-            timeout=timeout or 10,
-        )
-        resp.raise_for_status()
-        data = resp.json() if resp.content else {}
-        return data if isinstance(data, dict) else {}
-    except Exception as e:
-        print(f"Reeman cancel error: {e}", file=sys.stderr)
-        return None
-
-
-def navigate_reeman(
-    target_x: float | None = None,
-    target_y: float | None = None,
-    target_ori: float | None = None,
-    *,
-    target_name: str | None = None,
-    move_type: str = "standard",
-    extra: dict[str, Any] | None = None,
-    timeout: float | None = None,
-) -> dict | None:
-    """
-    Reeman FlyBoat REST navigation.
-
-    standard + target_name -> POST /cmd/nav_name {"point": "..."}
-    standard + x/y/theta  -> POST /cmd/nav {"x": ..., "y": ..., "theta": ...}
-    charge                -> POST /cmd/charge {"type": 2, "point": "..."}
-    """
-    if not _reeman_rest_available(timeout=timeout):
-        return None
+    print("moving....", file=sys.stderr, flush=True)
 
     try:
-        if move_type == "charge":
-            charge_point = None
-            charge_type = 2
+        while True:
+            status = get_reeman_nav_status(timeout=poll_timeout)
 
-            if extra:
-                charge_point = extra.get("point") or extra.get("charge_point")
-                charge_type = int(extra.get("charge_type", charge_type))
+            if not status:
+                time.sleep(0.5)
+                continue
 
-            payload = {
-                "type": charge_type,
-                "point": charge_point or target_name or "Charging pile",
-            }
-            path = "/cmd/charge"
+            res = status.get("res")
+            reason = status.get("reason")
+            goal = status.get("goal")
+            dist = status.get("dist")
 
-        elif move_type == "standard" and target_name:
-            payload = {"point": target_name}
-            path = "/cmd/nav_name"
+            if res == 1:
+                sys.stderr.write(f"\rmoving.... (moving to {goal}, dist={dist})   ")
+                sys.stderr.flush()
 
-        elif move_type == "standard":
-            if target_x is None or target_y is None:
-                print("Reeman coordinate navigation requires X and Y.", file=sys.stderr)
-                return None
+            elif res == 3:
+                sys.stderr.write("\n")
+                sys.stderr.flush()
 
-            payload = {
-                "x": float(target_x),
-                "y": float(target_y),
-                "theta": float(target_ori or 0.0),
-            }
-            path = "/cmd/nav"
+                if reason == 0:
+                    print("Move finished: succeeded", file=sys.stderr)
+                else:
+                    print(f"Move finished: failed reason={reason}", file=sys.stderr)
+                return
 
-        else:
-            return None
+            elif res == 4:
+                sys.stderr.write("\n")
+                sys.stderr.flush()
+                print("Move finished: cancelled", file=sys.stderr)
+                return
 
-        resp = requests.post(
-            f"{_robot_base_url()}{path}",
-            json=payload,
-            timeout=timeout or 10,
-        )
-        resp.raise_for_status()
-        data = resp.json() if resp.content else {}
+            time.sleep(0.5)
 
-        if not isinstance(data, dict):
-            data = {}
-
-        return {
-            # "backend": "reeman_rest",
-            # "path": path,
-            "request": payload,
-            "response": data,
-        }
-
-    except Exception as e:
-        print(f"Reeman REST error: {e}", file=sys.stderr)
-        return None
+    except KeyboardInterrupt:
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+        print("Interrupt — Reeman cancel not implemented here.", file=sys.stderr)
 
 
 def navigate(
@@ -195,7 +155,6 @@ def navigate(
     target_y: float | None = None,
     target_ori: float | None = None,
     *,
-    target_name: str | None = None,     # Added for Reeman
     move_type: str = "standard",
     creator: str | None = None,
     target_accuracy: float | None = None,
@@ -209,7 +168,6 @@ def navigate(
     rack_layer: int | None = None,
     extra: dict[str, Any] | None = None,
 ) -> dict | None:
-    # """POST /chassis/moves — full MoveRequest per openapi.yaml."""
     """
     Navigate robot.
 
@@ -217,23 +175,20 @@ def navigate(
     Existing OpenAPI/WebSocket path is kept as fallback.
     """
 
-    reeman = navigate_reeman(
-        target_x,
-        target_y,
-        target_ori,
-        target_name=target_name,
-        move_type=move_type,
-        extra=extra,
-        timeout=timeout_seconds(),
-    )
-    if reeman is not None:
-        return reeman
+    if (
+        move_type == "standard"
+        and target_x is not None
+        and target_y is not None
+        and target_ori is not None
+    ):
+        reeman_result = navigate_reeman(target_x, target_y, target_ori)
+        if reeman_result is not None:
+            return reeman_result
 
     payload: dict[str, Any] = {
         "creator": creator or DEFAULT_CREATOR,
         "type": move_type,
     }
-
     if target_x is not None:
         payload["target_x"] = float(target_x)
     if target_y is not None:
@@ -254,6 +209,7 @@ def navigate(
         payload["charge_retry_count"] = int(charge_retry_count)
     if rack_area_id is not None:
         payload["rack_area_id"] = rack_area_id
+
     props: dict[str, Any] = {}
     if inplace_rotate is not None:
         props["inplace_rotate"] = bool(inplace_rotate)
@@ -261,6 +217,7 @@ def navigate(
         props["rack_layer"] = int(rack_layer)
     if props:
         payload["properties"] = props
+
     if extra:
         for k, v in extra.items():
             if k in payload and isinstance(payload[k], dict) and isinstance(v, dict):
@@ -299,8 +256,6 @@ def _print_planning_status(state: str) -> None:
         hint = "done"
     elif state == "moving":
         hint = "moving — Ctrl+C to cancel"
-    elif state == "idle":
-        hint = "idle"
     elif state in ("failed", "cancelled"):
         hint = state
     else:
@@ -319,60 +274,6 @@ def _handle_planning_message(state: _MoveWatchState, data: object) -> None:
         state.terminal_state = move_state
 
 
-def monitor_reeman_move_after_dispatch(timeout: float | None = None) -> bool:
-    """
-    Poll /reeman/nav_status until terminal state.
-
-    Returns True when Reeman REST monitor was used.
-    Returns False when Reeman REST is unavailable, so caller can fallback.
-    """
-    if not _reeman_rest_available(timeout=timeout):
-        return False
-
-    interrupted = False
-    last_move_state: str | None = None
-    terminal_state: str | None = None
-
-    print("moving....", file=sys.stderr, flush=True)
-
-    try:
-        while terminal_state is None:
-            status = get_reeman_nav_status(timeout=timeout)
-            if status is None:
-                return False
-
-            move_state = _reeman_status_to_move_state(status)
-            if move_state is not None:
-                last_move_state = move_state
-                _print_planning_status(move_state)
-
-                if move_state in _TERMINAL_MOVE_STATES:
-                    terminal_state = move_state
-
-            time.sleep(0.5)
-
-    except KeyboardInterrupt:
-        interrupted = True
-
-    finally:
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-
-        if terminal_state == "succeeded":
-            print("Move finished: succeeded", file=sys.stderr)
-        elif terminal_state:
-            print(f"Move finished: {terminal_state}", file=sys.stderr)
-        elif interrupted and should_cancel_on_interrupt(last_move_state):
-            print(
-                "Interrupt - sending Reeman cancel (POST /cmd/cancel_goal)...",
-                file=sys.stderr,
-                flush=True,
-            )
-            cancel_reeman_move(timeout=timeout)
-
-    return True
-
-
 async def _monitor_move_planning_async(state: _MoveWatchState) -> None:
     """Stream ``/planning_state`` until terminal state or KeyboardInterrupt."""
     want = {_PLANNING_TOPIC}
@@ -382,35 +283,30 @@ async def _monitor_move_planning_async(state: _MoveWatchState) -> None:
     async with websockets.connect(uri, open_timeout=ot) as ws:
         await ws.send(json.dumps({"enable_topic": _PLANNING_TOPIC}))
         print("moving....", file=sys.stderr, flush=True)
+
         while state.terminal_state is None:
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=0.5)
             except asyncio.TimeoutError:
                 continue
+
             try:
                 data = json.loads(raw)
             except (json.JSONDecodeError, TypeError):
                 continue
+
             topic = data.get("topic")
             if isinstance(topic, str) and topic in want:
                 _handle_planning_message(state, data)
 
 
 def monitor_move_after_dispatch() -> None:
-    # """Watch ``/planning_state``; cancel on Ctrl+C unless move already ``succeeded``."""
-    """
-    Watch move state.
-
-    Reeman FlyBoat uses REST polling.
-    Existing OpenAPI/WebSocket monitor is kept as fallback.
-    """
-    if monitor_reeman_move_after_dispatch(timeout=timeout_seconds()):
-        return
-
+    """Watch ``/planning_state``; cancel on Ctrl+C unless move already ``succeeded``."""
     from cancel_move import cancel_move_robust
 
     watch = _MoveWatchState()
     interrupted = False
+
     try:
         asyncio.run(_monitor_move_planning_async(watch))
     except KeyboardInterrupt:
@@ -418,6 +314,7 @@ def monitor_move_after_dispatch() -> None:
     finally:
         sys.stderr.write("\n")
         sys.stderr.flush()
+
         if watch.terminal_state == "succeeded":
             print("Move finished: succeeded", file=sys.stderr)
         elif watch.terminal_state:
@@ -434,9 +331,11 @@ def monitor_move_after_dispatch() -> None:
 def _merge_extra_json(s: str | None) -> dict[str, Any] | None:
     if not s:
         return None
+
     obj = json.loads(s)
     if not isinstance(obj, dict):
         raise ValueError("--json-extra must be a JSON object")
+
     return obj
 
 
@@ -444,26 +343,30 @@ if __name__ == "__main__":
     from get_waypoints import get_waypoints
 
     parser = argparse.ArgumentParser(
-        # description="POST /chassis/moves — navigation / charge / route / elevator / rack move types.",
-        description="Navigate robot. Reeman REST first, OpenAPI/WebSocket fallback.",
+        description="Navigate robot by coordinate, waypoint, route, charge, elevator, or rack move type.",
     )
     parser.add_argument(
         "rest",
         nargs="*",
-        help="Either three numbers X Y ORI radians, or one waypoint/point name",
+        help="Either three numbers X Y ORI radians, or one waypoint name",
     )
     parser.add_argument(
         "--type",
         choices=MOVE_TYPES,
         default="standard",
-        help="Move type (OpenAPI MoveType)",
+        help="Move type",
     )
     parser.add_argument("--target-x", type=float)
     parser.add_argument("--target-y", type=float)
     parser.add_argument("--target-ori", type=float)
     parser.add_argument("--target-z", type=float)
     parser.add_argument("--target-accuracy", type=float)
-    parser.add_argument("--route", "--route-coordinates", dest="route_coordinates", help="CSV x1,y1,x2,y2,...")
+    parser.add_argument(
+        "--route",
+        "--route-coordinates",
+        dest="route_coordinates",
+        help="CSV x1,y1,x2,y2,...",
+    )
     parser.add_argument("--detour-tolerance", type=float)
     parser.add_argument("--use-target-zone", action="store_true")
     parser.add_argument("--no-target-zone", action="store_true", dest="no_target_zone")
@@ -473,15 +376,12 @@ if __name__ == "__main__":
     parser.add_argument("--no-inplace-rotate", action="store_true", dest="no_inplace_rotate")
     parser.add_argument("--rack-layer", type=int)
     parser.add_argument("--creator", default=None)
-    # parser.add_argument("--json-extra", help='merge JSON object, e.g.\'{{"rack_area_id":"a"}}\'')
-    parser.add_argument("--json-extra", help='merge JSON object, e.g. \'{"point":"Charging pile"}\'')
-    # parser.add_argument("--body-file", help="full MoveRequest JSON (overrides other flags)")
-    parser.add_argument("--body-file", help="full MoveRequest JSON for OpenAPI fallback")
+    parser.add_argument("--json-extra", help='merge JSON object, e.g. \'{"rack_area_id":"a"}\'')
+    parser.add_argument("--body-file", help="full MoveRequest JSON, overrides other flags")
     parser.add_argument(
         "--no-monitor",
         action="store_true",
-        # help="exit immediately after POST (no /planning_state watch or interrupt cancel)",
-        help="exit immediately after dispatch",
+        help="exit immediately after POST",
     )
     args = parser.parse_args()
 
@@ -503,54 +403,67 @@ if __name__ == "__main__":
 
     if args.body_file:
         payload = parse_json_file(args.body_file)
+
         if not isinstance(payload, dict):
             print("body-file must contain a JSON object", file=sys.stderr)
             sys.exit(1)
+
         data = request_api("POST", "/chassis/moves", json_body=payload)
         out = data if isinstance(data, dict) else None
+
         if out is not None:
             print_json(out)
             if not args.no_monitor:
                 monitor_move_after_dispatch()
+
         sys.exit(0 if out is not None else 1)
 
     ax = args.target_x
     ay = args.target_y
     ao = args.target_ori
-    target_name: str | None = None
+
+    used_reeman_coordinate_mode = False
 
     if args.rest:
         if len(args.rest) == 3:
             try:
-                ax, ay, ao = float(args.rest[0]), float(args.rest[1]), float(args.rest[2])
+                ax = float(args.rest[0])
+                ay = float(args.rest[1])
+                ao = float(args.rest[2])
+                used_reeman_coordinate_mode = True
             except ValueError:
                 print("Three rest args must be numeric X Y ORI.", file=sys.stderr)
                 sys.exit(1)
-        # elif len(args.rest) == 1 and args.type == "standard":
-        elif len(args.rest) == 1 and args.type in ("standard", "charge"):
+
+        elif len(args.rest) == 1 and args.type == "standard":
             target_name = args.rest[0]
-            if not _reeman_rest_available(timeout=timeout_seconds()) and args.type == "standard":
-                wps = get_waypoints() or []
-                hit = False
-                for w in wps:
-                    if w.get("name") == target_name:
-                        ax, ay, ao = w["x"], w["y"], w["ori"]
-                        hit = True
-                        break
-                if not hit:
-                    print(f"Waypoint {target_name!r} not found in overlays.", file=sys.stderr)
-                    sys.exit(1)
+            wps = get_waypoints() or []
+            hit = False
+
+            for w in wps:
+                if w.get("name") == target_name:
+                    ax = w["x"]
+                    ay = w["y"]
+                    ao = w["ori"]
+                    hit = True
+                    break
+
+            if not hit:
+                print(f"Waypoint {target_name!r} not found in overlays.", file=sys.stderr)
+                sys.exit(1)
+
         else:
-            # print("Provide three numbers X Y ORI, one waypoint name, or use --target-x/--target-y.", file=sys.stderr)
             print(
-                "Provide three numbers X Y ORI, one waypoint/point name, or use --target-x/--target-y.",
+                "Provide three numbers X Y ORI, one waypoint name, or use --target-x/--target-y/--target-ori.",
                 file=sys.stderr,
             )
             sys.exit(1)
+
     elif args.type == "standard" and ax is None and ay is None:
         from cli_tables import print_waypoints_table
 
         wps = get_waypoints() or []
+
         if not wps:
             print(
                 "No overlay points — provide: navigate X Y ORI\n"
@@ -558,21 +471,23 @@ if __name__ == "__main__":
                 file=sys.stderr,
             )
             sys.exit(1)
+
         print_waypoints_table(wps)
         sel = input("Index: ").strip()
+
         if not sel.isdigit() or int(sel) >= len(wps):
             sys.exit(1)
+
         p = wps[int(sel)]
-        # ax, ay, ao = p["x"], p["y"], p["ori"]
         ax = p["x"]
         ay = p["y"]
-        ao = p.get("ori", p.get("theta", 0.0))
+        ao = p.get("ori", p.get("theta", p.get("target_ori", 0.0)))
+        used_reeman_coordinate_mode = True
 
     out = navigate(
         ax,
         ay,
         ao,
-        target_name=target_name,
         move_type=args.type,
         creator=args.creator,
         target_accuracy=args.target_accuracy,
@@ -586,9 +501,14 @@ if __name__ == "__main__":
         rack_layer=args.rack_layer,
         extra=extra,
     )
+
     if out is not None:
         print_json(out)
+
         if not args.no_monitor:
-            monitor_move_after_dispatch()
+            if used_reeman_coordinate_mode:
+                monitor_reeman_move_after_dispatch()
+            else:
+                monitor_move_after_dispatch()
     else:
         sys.exit(1)
