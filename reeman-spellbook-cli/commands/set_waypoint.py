@@ -1,21 +1,53 @@
 #!/usr/bin/env python3
 
 import argparse
+import sys
+from typing import Optional
+
 import requests
 
 from api_client import print_json
 from credentials import CONSTANTS as ROBOT
 
 
+# UI labels -> API type values.
+# Known from the Reeman manual:
+# - normal / waypoint
+# - delivery
+# - production
+# - charge / charging_pile
+#
+# The rest are kept as distinct values because they appear in the web UI.
 VALID_TYPES = {
     "waypoint": "normal",
     "normal": "normal",
     "delivery": "delivery",
+    "avoidance": "avoid",
     "production": "production",
+    "recycling": "recycle",
+    "qr_code": "qr_code",
+    "elevator_entrance": "elevator_entrance",
+    "inside_elevator": "inside_elevator",
+    "elevator_exit": "elevator_exit",
+    "charging_pile": "charge",
     "charge": "charge",
     "charging": "charge",
-    "charging_pile": "charge",
 }
+
+PROMPT_TYPES = [
+    "waypoint",
+    "delivery",
+    "avoidance",
+    "production",
+    "recycling",
+    "qr_code",
+    "elevator_entrance",
+    "inside_elevator",
+    "elevator_exit",
+    "charging_pile",
+]
+
+API_TYPES = sorted(set(VALID_TYPES.keys()))
 
 
 def _robot_base_url() -> str:
@@ -33,8 +65,36 @@ def get_reeman_pose(timeout: float | None = None) -> dict | None:
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        print(f"Reeman REST error while getting pose: {e}")
+        print(f"Reeman REST error while getting pose: {e}", file=sys.stderr)
         return None
+
+
+def _prompt_name() -> str:
+    while True:
+        name = input("Name? ").strip()
+        if name:
+            return name
+        print("Name cannot be empty.", file=sys.stderr)
+
+
+def _prompt_waypoint_type() -> str:
+    print("Waypoint Type?")
+    for i, t in enumerate(PROMPT_TYPES, start=1):
+        print(f"{i}. {t}")
+
+    while True:
+        choice = input("Select [1-10]: ").strip()
+
+        if choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(PROMPT_TYPES):
+                return PROMPT_TYPES[idx - 1]
+
+        choice_lower = choice.lower()
+        if choice_lower in VALID_TYPES:
+            return choice_lower
+
+        print("Invalid selection. Choose 1-10 or type one of the names above.", file=sys.stderr)
 
 
 def set_reeman_waypoint(
@@ -92,7 +152,7 @@ def set_reeman_waypoint(
         }
 
     except Exception as e:
-        print(f"Reeman REST error while setting waypoint: {e}")
+        print(f"Reeman REST error while setting waypoint: {e}", file=sys.stderr)
         return None
 
 
@@ -102,13 +162,14 @@ def main() -> None:
     )
     parser.add_argument(
         "name",
+        nargs="?",
         help="Waypoint name, e.g. Point_A",
     )
     parser.add_argument(
         "--type",
-        default="normal",
-        choices=sorted(VALID_TYPES.keys()),
-        help="Waypoint type. Default: normal",
+        default=None,
+        choices=API_TYPES,
+        help="Waypoint type. If omitted, you will be asked interactively.",
     )
     parser.add_argument(
         "--timeout",
@@ -119,9 +180,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    name = args.name or _prompt_name()
+    waypoint_type = args.type or _prompt_waypoint_type()
+
     result = set_reeman_waypoint(
-        name=args.name,
-        waypoint_type=args.type,
+        name=name,
+        waypoint_type=waypoint_type,
         timeout=args.timeout,
     )
 
