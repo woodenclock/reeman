@@ -444,7 +444,8 @@ if __name__ == "__main__":
                 if w.get("name") == target_name:
                     ax = w["x"]
                     ay = w["y"]
-                    ao = w["ori"]
+                    ao = w.get("ori", w.get("theta", w.get("target_ori", 0.0)))
+                    used_reeman_coordinate_mode = True
                     hit = True
                     break
 
