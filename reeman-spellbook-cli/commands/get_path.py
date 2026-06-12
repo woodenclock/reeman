@@ -9,6 +9,9 @@ from ws_cli import run_single_topic_cli
 from ws_helper import ws_get_topics
 
 
+NO_PATH_MESSAGE = "If robot is not navigating to destination, no paths will be printed out\n\n"
+
+
 def _robot_base_url() -> str:
     prefix = getattr(ROBOT, "PREFIX", "http://")
     ip = getattr(ROBOT, "ROBOT_IP")
@@ -29,9 +32,10 @@ def get_reeman_path(timeout: float | None = None) -> dict | None:
             "coordinates": data.get("coordinates", []),
             # "raw": data,
         }
-    except Exception as e:
-        print(f"Reeman REST error: {e}")
-        return None
+    except Exception:
+        return {
+            "coordinates": [],
+        }
 
 
 def get_path(timeout: float | None = None) -> dict | None:
@@ -47,14 +51,17 @@ def get_path(timeout: float | None = None) -> dict | None:
     try:
         got = ws_get_topics(ROBOT.ROBOT_IP, ["/path"], timeout=timeout)
         return got.get("/path")
-    except Exception as e:
-        print(f"WebSocket error: {e}")
+    except Exception:
         return None
 
 
 if __name__ == "__main__":
+    print(NO_PATH_MESSAGE, end="")
+
     path = get_path()
     if path is not None:
-        print_json(path)
+        coordinates = path.get("coordinates", [])
+        if coordinates:
+            print_json(path)
     else:
         run_single_topic_cli("/path", description="WebSocket /path")
